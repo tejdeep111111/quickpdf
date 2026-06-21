@@ -7,11 +7,15 @@ import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.SnapshotParameters;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Line;
+import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.util.Duration;
@@ -91,12 +95,11 @@ public class PopupController {
             "> building PDF...",
             "> writing output..."
         };
-        int stepDelay = 420; // ms between each line appearing
+        int stepDelay = 420;
 
-        // Build terminal view inside drop zone
         VBox terminal = new VBox(6);
         terminal.setAlignment(Pos.CENTER_LEFT);
-        terminal.setPadding(new Insets(22, 28, 22, 28));
+        terminal.setPadding(new Insets(18, 28, 18, 28));
 
         Label[] lineLabels = new Label[steps.length];
         for (int i = 0; i < steps.length; i++) {
@@ -110,15 +113,39 @@ public class PopupController {
             terminal.getChildren().add(lineLabels[i]);
         }
 
-        // Blinking cursor at the bottom
+        // ── Progress bar ──────────────────────────────────────
+        // Animates: [>         ] → [===>      ] → [======>   ] → [=========]
+        Label progressLabel = new Label();
+        progressLabel.setStyle(
+            "-fx-text-fill: " + SUCCESS + ";" +
+            "-fx-font-family: '" + FONT + "';" +
+            "-fx-font-size: 12;"
+        );
+        progressLabel.setOpacity(0);
+
+        int BAR_WIDTH = 18; // number of chars inside brackets
+        int[] frame = {0};  // mutable counter
+
+        Timeline progressAnim = new Timeline(new KeyFrame(Duration.millis(80), e -> {
+            frame[0]++;
+            int filled = Math.min(frame[0], BAR_WIDTH);
+            boolean atEnd = filled >= BAR_WIDTH;
+            String bar = "=".repeat(atEnd ? BAR_WIDTH : Math.max(0, filled - 1))
+                       + (atEnd ? "" : ">")
+                       + " ".repeat(Math.max(0, BAR_WIDTH - filled));
+            progressLabel.setText("[" + bar + "]");
+        }));
+        progressAnim.setCycleCount(Timeline.INDEFINITE);
+
+        // Blinking cursor
         Label cursor = new Label("_");
         cursor.setStyle("-fx-text-fill: " + TEXT_DIM + "; -fx-font-family: '" + FONT + "'; -fx-font-size: 12;");
         Timeline blink = new Timeline(new KeyFrame(Duration.millis(400),
                 e -> cursor.setVisible(!cursor.isVisible())));
         blink.setCycleCount(Timeline.INDEFINITE);
         blink.play();
-        terminal.getChildren().add(cursor);
 
+        terminal.getChildren().addAll(progressLabel, cursor);
         dropZone.getChildren().setAll(terminal);
         setStatus("converting...", TEXT);
 
@@ -128,11 +155,17 @@ public class PopupController {
             final Label lbl = lineLabels[i];
             reveal.getKeyFrames().add(new KeyFrame(Duration.millis((long) i * stepDelay), e -> {
                 FadeTransition ft = new FadeTransition(Duration.millis(180), lbl);
-                ft.setFromValue(0);
-                ft.setToValue(1);
+                ft.setFromValue(0); ft.setToValue(1);
                 ft.play();
             }));
         }
+        // Show progress bar immediately with first line
+        reveal.getKeyFrames().add(new KeyFrame(Duration.millis(0), e -> {
+            FadeTransition ft = new FadeTransition(Duration.millis(200), progressLabel);
+            ft.setFromValue(0); ft.setToValue(1);
+            ft.play();
+            progressAnim.play();
+        }));
         reveal.play();
 
         // Run conversion in background; wait for minimum animation time
@@ -144,6 +177,9 @@ public class PopupController {
                 try { Thread.sleep(MIN_ANIM_MS - elapsed); }
                 catch (InterruptedException ignored) {}
             }
+            progressAnim.stop();
+            Platform.runLater(() -> progressLabel.setText("[==================]"));
+            try { Thread.sleep(200); } catch (InterruptedException ignored) {}
             result.ifPresentOrElse(
                 pdf -> Platform.runLater(() -> showPdfCard(pdf)),
                 ()  -> Platform.runLater(() -> setStatus("conversion failed", ERROR_COL))
@@ -164,9 +200,8 @@ public class PopupController {
             "-fx-background-color: " + BG + ";" +
             "-fx-border-color: " + BORDER + ";" +
             "-fx-border-width: 1;" +
-            "-fx-border-radius: 8;" +
-            "-fx-background-radius: 8;" +
-            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.6), 20, 0.2, 0, 4);"
+            "-fx-border-radius: 18;" +
+            "-fx-background-radius: 18;"
         );
 
         root.getChildren().addAll(
@@ -180,6 +215,43 @@ public class PopupController {
         Scene scene = new Scene(root);
         scene.setFill(Color.TRANSPARENT);
         stage.setScene(scene);
+
+        // Set the PDF icon as the taskbar / alt-tab icon for this stage
+        Canvas iconCanvas = buildPdfIcon(64, 80);
+        SnapshotParameters sp = new SnapshotParameters();
+        sp.setFill(Color.TRANSPARENT);
+        stage.getIcons().add(iconCanvas.snapshot(sp, null));
+    }
+
+    // PDF document icon — white page, folded corner, red "PDF"
+    private Canvas buildPdfIcon(int W, int H) {
+        int FOLD = W / 3;
+        Canvas c = new Canvas(W, H);
+        GraphicsContext gc = c.getGraphicsContext2D();
+
+        gc.setFill(Color.WHITE);
+        gc.beginPath();
+        gc.moveTo(0, 0);
+        gc.lineTo(W - FOLD, 0);
+        gc.lineTo(W, FOLD);
+        gc.lineTo(W, H);
+        gc.lineTo(0, H);
+        gc.closePath();
+        gc.fill();
+
+        gc.setFill(Color.rgb(180, 180, 180));
+        gc.beginPath();
+        gc.moveTo(W - FOLD, 0);
+        gc.lineTo(W, FOLD);
+        gc.lineTo(W - FOLD, FOLD);
+        gc.closePath();
+        gc.fill();
+
+        gc.setFill(Color.rgb(210, 30, 30));
+        gc.setFont(javafx.scene.text.Font.font("Arial", FontWeight.BOLD, W / 4));
+        gc.fillText("PDF", W * 0.10, H * 0.55);
+
+        return c;
     }
 
     // ── Title bar ──────────────────────────────────────────────
@@ -190,7 +262,7 @@ public class PopupController {
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setStyle(
             "-fx-background-color: " + BG_HEADER + ";" +
-            "-fx-background-radius: 8 8 0 0;"
+            "-fx-background-radius: 18 18 0 0;"
         );
 
         // App name
@@ -201,6 +273,7 @@ public class PopupController {
             "-fx-font-size: 13;" +
             "-fx-font-weight: bold;"
         );
+
 
         // Mode pill — "JPG → PDF"
         Label modePill = new Label(" JPG → PDF ");
@@ -325,7 +398,7 @@ public class PopupController {
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setStyle(
             "-fx-background-color: " + BG_HEADER + ";" +
-            "-fx-background-radius: 0 0 8 8;"
+            "-fx-background-radius: 0 0 18 18;"
         );
 
         Label prompt = new Label("$");

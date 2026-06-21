@@ -1,5 +1,6 @@
 package com.quickpdf;
 
+import javafx.application.Platform;
 import javafx.animation.FadeTransition;
 import javafx.animation.ParallelTransition;
 import javafx.animation.TranslateTransition;
@@ -10,8 +11,10 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
@@ -33,15 +36,16 @@ public class ResultCardController {
     private static final String ERROR_COL = "#e05c5c";
     private static final String FONT      = "Consolas";
 
-    private final File     pdfFile;
+
     private final Runnable onReset;
     private final VBox     card;
     private       Canvas   iconCanvas; // kept for drag snapshot
+    private       File     pdfFile;    // mutable — updated on rename
 
     public ResultCardController(File pdfFile, Runnable onReset) {
         if (pdfFile == null) throw new IllegalArgumentException("pdfFile must not be null");
         if (onReset == null) throw new IllegalArgumentException("onReset must not be null");
-        this.pdfFile = pdfFile;
+        this.pdfFile = pdfFile;   // mutable field
         this.onReset = onReset;
         this.card    = buildCard();
         setupDragOut();
@@ -70,13 +74,28 @@ public class ResultCardController {
         // ── PDF icon ───────────────────────────────────────────
         Node pdfIcon = buildPdfIcon();
 
-        // File name
-        Label name = new Label(pdfFile.getName());
-        name.setStyle(
-            "-fx-text-fill: " + DIM + ";" +
-            "-fx-font-family: '" + FONT + "';" +
-            "-fx-font-size: 12;"
+        // ── Inline-editable filename ───────────────────────────
+        // Hover → pencil hint appears. Click → Label swaps to TextField.
+        // Enter / focus lost → file renamed, Label restored.
+
+        Label nameLabel = new Label(pdfFile.getName());
+        nameLabel.setStyle(nameStyle(DIM));
+
+        Label pencil = new Label(" ✎");
+        pencil.setStyle(
+            "-fx-text-fill: #333333;" +
+            "-fx-font-size: 11;"
         );
+        pencil.setVisible(false);
+
+        HBox nameRow = new HBox(2, nameLabel, pencil);
+        nameRow.setAlignment(Pos.CENTER);
+        nameRow.setStyle("-fx-cursor: text;");
+
+        nameRow.setOnMouseEntered(e -> pencil.setVisible(true));
+        nameRow.setOnMouseExited(e  -> pencil.setVisible(false));
+
+        nameRow.setOnMouseClicked(e -> startRename(nameRow, nameLabel, pencil));
 
         // File size
         long kb = Math.max(1, pdfFile.length() / 1024);
@@ -100,7 +119,7 @@ public class ResultCardController {
         );
 
         // Centered content
-        VBox center = new VBox(7, pdfIcon, name, size, dragHint);
+        VBox center = new VBox(7, pdfIcon, nameRow, size, dragHint);
         center.setAlignment(Pos.CENTER);
         center.setPadding(new Insets(10));
         center.setStyle("-fx-cursor: move;");
@@ -108,9 +127,13 @@ public class ResultCardController {
         // ↺ reset icon — top-right corner, overlaid
         Label resetBtn = new Label("↺");
         resetBtn.setStyle(resetStyle("#333333"));
-        resetBtn.setOnMouseEntered(e -> resetBtn.setStyle(resetStyle(ERROR_COL)));
+        resetBtn.setOnMouseEntered(e -> resetBtn.setStyle(resetStyle("#666666")));
         resetBtn.setOnMouseExited(e  -> resetBtn.setStyle(resetStyle("#333333")));
-        resetBtn.setOnMouseClicked(e -> onReset.run());
+        resetBtn.setOnMouseClicked(e -> {
+            // Delete the file then go back to idle
+            TempFileManager.getInstance().deleteWithDelay(pdfFile);
+            onReset.run();
+        });
         StackPane.setAlignment(resetBtn, Pos.TOP_RIGHT);
         StackPane.setMargin(resetBtn, new Insets(8, 10, 0, 0));
 
@@ -165,11 +188,74 @@ public class ResultCardController {
         return iconCanvas;
     }
 
+    private String nameStyle(String color) {
+        return "-fx-text-fill: " + color + ";" +
+               "-fx-font-family: '" + FONT + "';" +
+               "-fx-font-size: 12;";
+    }
+
+    // Swap Label → TextField, handle rename on Enter / focus lost
+    private void startRename(HBox nameRow, Label nameLabel, Label pencil) {
+        String current = pdfFile.getName().replaceAll("\\.pdf$", "");
+
+        TextField field = new TextField(current);
+        field.setStyle(
+            "-fx-background-color: #111111;" +
+            "-fx-text-fill: #cccccc;" +
+            "-fx-font-family: '" + FONT + "';" +
+            "-fx-font-size: 12;" +
+            "-fx-border-color: #569cd6;" +
+            "-fx-border-width: 1;" +
+            "-fx-border-radius: 3;" +
+            "-fx-background-radius: 3;" +
+            "-fx-padding: 2 6 2 6;" +
+            "-fx-pref-width: 200;"
+        );
+
+        // Swap label row → text field
+        nameRow.getChildren().setAll(field);
+        field.requestFocus();
+        field.selectAll();
+
+        Runnable commit = () -> {
+            String newBase = field.getText().trim();
+            if (newBase.isEmpty()) newBase = current;
+            if (!newBase.endsWith(".pdf")) newBase += ".pdf";
+
+            File newFile = new File(pdfFile.getParent(), newBase);
+            boolean renamed = pdfFile.renameTo(newFile);
+
+            if (renamed) {
+                pdfFile = newFile; // ← update reference so next drag uses new path
+                nameLabel.setText(newBase);
+                nameLabel.setStyle(nameStyle(DIM));
+            } else {
+                // Flash red if rename failed, restore original name
+                nameLabel.setText(pdfFile.getName());
+                nameLabel.setStyle(nameStyle(ERROR_COL));
+            }
+            pencil.setVisible(false);
+            nameRow.getChildren().setAll(nameLabel, pencil);
+        };
+
+        field.setOnAction(e -> commit.run());
+        field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+            if (!isFocused) commit.run();
+        });
+        field.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ESCAPE) {
+                nameLabel.setText(pdfFile.getName());
+                nameLabel.setStyle(nameStyle(DIM));
+                nameRow.getChildren().setAll(nameLabel, pencil);
+            }
+        });
+    }
+
     private String resetStyle(String color) {
         return "-fx-text-fill: " + color + ";" +
                "-fx-font-size: 16;" +
                "-fx-cursor: hand;" +
-               "-fx-effect: dropshadow(gaussian, " + color + ", 8, 0.6, 0, 0);";
+               "-fx-opacity: 0.9;";
     }
 
     // ── Drag the PDF out to another window ─────────────────────
@@ -182,12 +268,10 @@ public class ResultCardController {
             var db = card.startDragAndDrop(TransferMode.COPY);
             db.setContent(content);
 
-            // Snapshot the PDF icon canvas and attach it to the cursor
             if (iconCanvas != null) {
                 SnapshotParameters params = new SnapshotParameters();
                 params.setFill(Color.TRANSPARENT);
                 WritableImage dragImage = iconCanvas.snapshot(params, null);
-                // Centre the icon under the cursor
                 db.setDragView(dragImage,
                         dragImage.getWidth()  / 2,
                         dragImage.getHeight() / 2);
@@ -198,10 +282,8 @@ public class ResultCardController {
         });
 
         card.setOnDragDone(e -> {
-            if (e.getTransferMode() == TransferMode.COPY) {
-                LOG.info("Drag-out completed — scheduling deletion.");
-                TempFileManager.getInstance().deleteWithDelay(pdfFile);
-            }
+            // File stays alive — user can drag again until reset is clicked
+            LOG.info("Drag-out completed: " + pdfFile.getName());
             e.consume();
         });
     }
