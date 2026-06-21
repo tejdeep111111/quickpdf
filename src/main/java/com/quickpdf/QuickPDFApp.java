@@ -19,7 +19,6 @@ public class QuickPDFApp extends Application {
         // Keep the app alive in the background when popup is closed
         Platform.setImplicitExit(false);
 
-        // PopupController must be created on the JavaFX thread — we are here ✅
         PopupController popup = new PopupController();
 
         // Wire hotkey listener to popup
@@ -55,12 +54,7 @@ public class QuickPDFApp extends Application {
             return;
         }
 
-        // Simple coloured square as tray icon (replace with real icon asset later)
-        BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        g.setColor(new Color(0x56, 0x9c, 0xd6));
-        g.fillRoundRect(0, 0, 16, 16, 4, 4);
-        g.dispose();
+        BufferedImage img = buildPdfIconAwt();
 
         TrayIcon trayIcon = new TrayIcon(img, "QuickPDF — Alt+Q to open");
         trayIcon.setImageAutoSize(true);
@@ -88,6 +82,56 @@ public class QuickPDFApp extends Application {
         } catch (AWTException e) {
             LOG.warning("Could not add tray icon: " + e.getMessage());
         }
+    }
+
+    private void setTaskbarIcon() {
+        try {
+            if (java.awt.Taskbar.isTaskbarSupported()) {
+                java.awt.Taskbar taskbar = java.awt.Taskbar.getTaskbar();
+                if (taskbar.isSupported(java.awt.Taskbar.Feature.ICON_IMAGE)) {
+                    taskbar.setIconImage(buildPdfIconAwt());
+                    LOG.info("Taskbar icon set.");
+                }
+            }
+        } catch (Exception e) {
+            LOG.warning("Could not set taskbar icon: " + e.getMessage());
+        }
+    }
+
+    // AWT PDF icon for system tray
+    private BufferedImage buildPdfIconAwt() {
+        int S = 64;
+        BufferedImage img = new BufferedImage(S, S, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,      RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+        int fold = 14;
+        int[] xPage = {2, S - fold - 2, S - 2, S - 2, 2};
+        int[] yPage = {2, 2,            fold + 2, S - 2, S - 2};
+        g.setColor(Color.WHITE);
+        g.fillPolygon(xPage, yPage, 5);
+
+        g.setColor(new Color(180, 180, 180));
+        g.setStroke(new BasicStroke(1.5f));
+        g.drawPolygon(xPage, yPage, 5);
+
+        g.setColor(new Color(160, 160, 160));
+        g.fillPolygon(
+            new int[]{S - fold - 2, S - 2, S - fold - 2},
+            new int[]{2,            fold + 2, fold + 2},
+            3
+        );
+
+        g.setColor(new Color(210, 30, 30));
+        g.setFont(new Font("Arial", Font.BOLD, 18));
+        FontMetrics fm = g.getFontMetrics();
+        g.drawString("PDF",
+            (S - fm.stringWidth("PDF")) / 2,
+            S / 2 + fm.getAscent() / 2
+        );
+        g.dispose();
+        return img;
     }
 
     public static void main(String[] args) {
