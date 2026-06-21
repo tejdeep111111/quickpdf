@@ -275,17 +275,6 @@ public class PopupController {
         );
 
 
-        // Mode pill — "JPG → PDF"
-        Label modePill = new Label(" JPG → PDF ");
-        modePill.setStyle(
-            "-fx-text-fill: " + PROMPT + ";" +
-            "-fx-font-family: '" + FONT + "';" +
-            "-fx-font-size: 10;" +
-            "-fx-background-color: #1e2a38;" +
-            "-fx-background-radius: 3;" +
-            "-fx-padding: 2 6 2 6;"
-        );
-
         HBox spacer = new HBox();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
@@ -296,7 +285,7 @@ public class PopupController {
         closeBtn.setOnMouseEntered(e -> closeBtn.setStyle(closeStyle(ERROR_COL)));
         closeBtn.setOnMouseExited(e  -> closeBtn.setStyle(closeStyle(TEXT_DIM)));
 
-        bar.getChildren().addAll(appName, modePill, spacer, closeBtn);
+        bar.getChildren().addAll(appName, spacer, closeBtn);
 
         bar.setOnMousePressed(e -> { dragOffsetX = e.getSceneX(); dragOffsetY = e.getSceneY(); });
         bar.setOnMouseDragged(e -> {
@@ -335,14 +324,14 @@ public class PopupController {
             "-fx-font-size: 22;"
         );
 
-        Label line1 = new Label("drop .jpg file here");
+        Label line1 = new Label("drop image(s) here");
         line1.setStyle(
             "-fx-text-fill: " + TEXT_DIM + ";" +
             "-fx-font-family: '" + FONT + "';" +
             "-fx-font-size: 13;"
         );
 
-        Label line2 = new Label("single or multiple files");
+        Label line2 = new Label(".jpg, .jpeg, .png → PDF");
         line2.setStyle(
             "-fx-text-fill: #222222;" +
             "-fx-font-family: '" + FONT + "';" +
@@ -381,7 +370,7 @@ public class PopupController {
                     List<File> snapshot = List.copyOf(files);
                     showLoadingAnimation(label, snapshot);
                 } else {
-                    setStatus("only .jpg files supported", ERROR_COL);
+                    setStatus("only .jpg/.png files supported", ERROR_COL);
                 }
             }
             dropZone.setStyle(idleDropZoneStyle());

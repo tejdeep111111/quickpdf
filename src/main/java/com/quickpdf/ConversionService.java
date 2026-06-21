@@ -25,20 +25,20 @@ public class ConversionService {
             return false;
         }
         String fileName = path.getFileName().toString().toLowerCase();
-        return fileName.endsWith(".jpg") || fileName.endsWith(".jpeg");
+        return fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || fileName.endsWith(".png");
     }
 
-    public File convert(File jpgFile) throws IOException {
+    public File convert(File imageFile) throws IOException {
 
         //STEP 1: Validate the input file
-        if(jpgFile==null || !jpgFile.exists() || !supports(jpgFile.toPath())) {
-            throw new IllegalArgumentException("Invalid JPG file provided for conversion: " + (jpgFile != null ? jpgFile.getAbsolutePath() : "null"));
+        if(imageFile ==null || !imageFile.exists() || !supports(imageFile.toPath())) {
+            throw new IllegalArgumentException("Invalid file provided for conversion: " + (imageFile != null ? imageFile.getAbsolutePath() : "null"));
         }
 
         //STEP 2: Read the JPG file into memory
-        BufferedImage image = ImageIO.read(jpgFile);
+        BufferedImage image = ImageIO.read(imageFile);
         if(image == null) {
-            throw new IOException("Failed to read the JPG file: " + jpgFile.getAbsolutePath());
+            throw new IOException("Failed to read the JPG file: " + imageFile.getAbsolutePath());
         }
 
         //Step 3: Convert pixel dimensions to points (1 point = 1/72 inch)
@@ -46,7 +46,7 @@ public class ConversionService {
         float heightInPoints = image.getHeight() * 72f / 96f;
 
         //STEP 4:Build the output file path
-        String rawName = jpgFile.getName();
+        String rawName = imageFile.getName();
         String baseName = (rawName == null ? "quickpdf" : rawName)
                 .replaceAll("(?i)\\.jpe?g$", "");
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -60,7 +60,7 @@ public class ConversionService {
             doc.addPage(page);
 
             //Embed the JPG image into the PDF page
-            PDImageXObject pdImage = PDImageXObject.createFromFile(jpgFile.getAbsolutePath(), doc);
+            PDImageXObject pdImage = PDImageXObject.createFromFile(imageFile.getAbsolutePath(), doc);
 
             //Draw the image onto the PDF page
             try(PDPageContentStream content = new PDPageContentStream(doc, page)) {
