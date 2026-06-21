@@ -145,8 +145,8 @@ mvn javafx:run
 ## 🗺️ MVP Scope
 
 - [x] Project structure & documentation
-- [ ] TempFileManager
-- [ ] ConversionService (JPG → PDF)
+- [x] TempFileManager
+- [x] ConversionService (JPG → PDF)
 - [ ] DragDropHandler
 - [ ] PopupController (drop zone UI)
 - [ ] ResultCardController (animated PDF card)
