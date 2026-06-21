@@ -26,12 +26,11 @@ public class ConversionService {
         return fileName.endsWith(".jpg") || fileName.endsWith(".jpeg");
     }
 
-    private File convert(File jpgFile) throws IOException {
+    public File convert(File jpgFile) throws IOException {
 
         //STEP 1: Validate the input file
         if(jpgFile==null || !jpgFile.exists() || !supports(jpgFile.toPath())) {
-            LOG.warning("Invalid JPG file provided for conversion: " + (jpgFile != null ? jpgFile.getAbsolutePath() : "null"));
-            return null;
+            throw new IllegalArgumentException("Invalid JPG file provided for conversion: " + (jpgFile != null ? jpgFile.getAbsolutePath() : "null"));
         }
 
         //STEP 2: Read the JPG file into memory
