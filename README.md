@@ -145,10 +145,10 @@ mvn javafx:run
 ## 🗺️ MVP Scope
 
 - [x] Project structure & documentation
-- [ ] TempFileManager
-- [ ] ConversionService (JPG → PDF)
-- [ ] DragDropHandler
-- [ ] PopupController (drop zone UI)
-- [ ] ResultCardController (animated PDF card)
-- [ ] GlobalHotkeyListener (Alt+Q)
-- [ ] QuickPDFApp (system tray + wiring)
+- [x] TempFileManager
+- [x] ConversionService (JPG → PDF)
+- [x] DragDropHandler
+- [x] PopupController (drop zone UI)
+- [x] ResultCardController (animated PDF card)
+- [x] GlobalHotkeyListener (Alt+Q)
+- [x] QuickPDFApp (system tray + wiring)

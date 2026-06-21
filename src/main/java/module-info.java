@@ -4,7 +4,7 @@ module com.quickpdf {
     requires java.desktop;
     requires org.apache.pdfbox;
     requires java.logging;
+    requires com.github.kwhat.jnativehook;
 
-    opens com.quickpdf to javafx.graphics;
-    //opens com.quickpdf.ui to javafx.graphics, javafx.controls;
+    opens com.quickpdf to javafx.graphics, javafx.controls;
 }
