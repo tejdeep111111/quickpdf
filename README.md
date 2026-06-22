@@ -1,34 +1,43 @@
 # QuickPDF
 
-A lightweight always-on-top desktop utility for Windows that converts JPG images to PDF on the fly — without breaking your workflow.
+A lightweight always-on-top desktop utility for Windows that converts JPG/PNG images to PDF on the fly — without breaking your workflow.
+
+> Press **Alt+Q** → drop your image → drag the PDF directly into any form, browser, or file explorer. Done.
 
 ---
 
 ## 🎯 Problem Statement
 
-A user is filling out an online form that requires a PDF, but their file is a JPG.
-Instead of opening a browser tool, uploading, waiting, and downloading — they press a shortcut key, drag the JPG into a floating popup, and drag the resulting PDF directly into the form.
+You're filling out an online form that requires a PDF, but your file is a JPG or PNG.  
+Instead of opening a browser converter, uploading, waiting, downloading — you press a shortcut key, drag the image into a floating popup, and drag the resulting PDF card directly into the form.
 
 ---
 
 ## 🧑‍💻 User Flow
 
 ```
-1. User presses global shortcut (Alt + Q)
+1. App starts silently → lives in the system tray
          ↓
-2. Floating always-on-top popup appears
+2. User presses Alt+Q (from anywhere — browser, file explorer, form)
          ↓
-3. Popup shows conversion modes (MVP: JPG → PDF only)
+3. Floating always-on-top popup appears, centred on screen
          ↓
-4. User drags their JPG onto the drop zone in the popup
+4. User drags one or more .jpg / .jpeg / .png files onto the drop zone
          ↓
-5. App converts the JPG to PDF in the background
+5. Terminal-style animation plays:
+     > reading photo.jpg...
+     > validating format...
+     > building PDF...
+     > writing output...
+     [==================] ← progress bar fills
          ↓
-6. An animated PDF "card" appears hanging from the popup
+6. PDF icon animates in — shows filename (editable) + file size
          ↓
-7. User drags the PDF card directly into any window (form, file explorer, etc.)
+7. User drags the PDF card out to any window (form field, file explorer, email, etc.)
          ↓
-8. Temp file is cleaned up after drag is complete or app closes
+8. Press Alt+Q again or click [×] to hide the popup
+         ↓
+9. Temp PDF is cleaned up automatically when reset or app exits
 ```
 
 ---
@@ -40,12 +49,12 @@ QuickPDFApp  (entry point, system tray, lifecycle)
     │
     ├── GlobalHotkeyListener     (listens for Alt+Q system-wide via JNativeHook)
     │
-    ├── PopupController          (JavaFX always-on-top popup, drop zone, mode selector)
+    ├── PopupController          (JavaFX always-on-top popup — drop zone + status bar)
     │       │
-    │       ├── DragDropHandler          (validates incoming drag, accepts only JPG)
-    │       ├── ConversionService        (JPG → PDF via Apache PDFBox)
-    │       ├── TempFileManager          (tracks and cleans up generated PDFs)
-    │       └── ResultCardController     (animated PDF card, draggable out to other apps)
+    │       ├── DragDropHandler          (validates incoming drag, accepts JPG/PNG, handles multi-file)
+    │       ├── ConversionService        (image → PDF via Apache PDFBox, single + batch)
+    │       ├── TempFileManager          (singleton — tracks and cleans up generated PDFs)
+    │       └── ResultCardController     (PDF icon card — inline rename, drag-out to OS, reset)
 ```
 
 ---
@@ -58,97 +67,105 @@ QuickPDFApp  (entry point, system tray, lifecycle)
 | PDF generation                | Apache PDFBox 3.0.2                 |
 | Global hotkey (system-wide)   | JNativeHook 2.2.2                   |
 | Build & packaging             | Maven + Maven Shade Plugin (fat JAR)|
+| Distribution                  | jpackage (self-contained `.exe`)    |
 | Testing                       | JUnit Jupiter 5.10.1                |
-| Java version                  | Java 17 (module system enabled)     |
+| Java version                  | Java 25 (module system enabled)     |
 
 ---
 
 ## 🗂️ Module Breakdown
 
 ### `TempFileManager`
-- Singleton
-- Tracks all generated temp PDF files
-- Deletes them on JVM shutdown via a shutdown hook
-- `deleteWithDelay(file)` — deletes after 500ms (gives time for drag-out to complete)
-- `deleteAll()` — immediate cleanup
+- Singleton — one instance for the entire app lifetime
+- `track(file)` — registers a generated PDF for cleanup
+- `deleteWithDelay(file)` — deletes after 500ms (lets OS finish reading after drag-out)
+- `deleteAll()` — immediate cleanup (called on reset + JVM shutdown hook)
 
 ### `ConversionService`
-- Validates input: must be non-null, existing, readable `.jpg`/`.jpeg` file
-- Reads image via `javax.imageio.ImageIO`
-- Creates a PDF page sized to the image dimensions (pixels → points at 96 DPI)
-- Writes PDF to a uniquely named temp file
-- Registers the output with `TempFileManager`
+- `supports(path)` — returns `true` for `.jpg`, `.jpeg`, `.png`
+- `convert(file)` — single image → PDF, sized to image dimensions (96 DPI → points)
+- `convertAll(files)` — multiple images → single merged PDF (one page per image)
+- Output filename: `basename_YYYYMMDD_HHmmss.pdf` — human-readable, no UUID
+- Registers output with `TempFileManager` automatically
 
 ### `DragDropHandler`
-- Attached to the JavaFX drop zone
-- Accepts `DragEvent` from the OS
-- Validates the dragged file via `ConversionService.supports()`
-- Triggers conversion and hands off result to `ResultCardController`
+- `canHandle(path)` — delegates to `ConversionService.supports()`
+- `handle(file)` — single file conversion
+- `handleAll(files)` — batch conversion, filters unsupported files silently
+- Fires `onSuccess` callback with the resulting PDF
 
 ### `PopupController`
-- JavaFX `Stage` with `StageStyle.TRANSPARENT` and `setAlwaysOnTop(true)`
-- Shows mode buttons at the top (MVP: "JPG → PDF" only, others greyed out)
-- Contains the drag-and-drop zone (dashed border, icon, label)
-- Minimises / hides on focus loss
-- Exposed `show()` and `hide()` methods called by `GlobalHotkeyListener`
+- `StageStyle.TRANSPARENT` + `setAlwaysOnTop(true)` — frameless, always on top
+- CLI-styled dark UI: black background, Consolas font, blinking cursor
+- Drop zone highlights green (accepted) / red (rejected) on drag-over
+- Terminal animation on conversion: 4 status lines + `[=====>]` progress bar
+- `show()` centres popup on screen, `hide()` fires `onHideCallback` to sync hotkey toggle state
 
 ### `ResultCardController`
-- Appears after successful conversion
-- Animated entrance: card "drops" into view using `TranslateTransition` + `DropShadow`
-- Displays file name and size
-- Acts as a drag source: on drag, puts the PDF `File` into the system `Dragboard`
-- After drag completes, calls `TempFileManager.deleteWithDelay()`
+- Canvas-drawn PDF icon (white page, folded corner, red "PDF" label, 90% opacity)
+- Inline filename rename — hover shows `✎`, click swaps to `TextField`, Enter confirms
+- `↺` reset button (top-right) — dim gray, lightens on hover, resets popup to drop zone
+- Drag-out: `startDragAndDrop(COPY)` puts `File` into system dragboard with PDF icon as cursor image
+- File persists on disk until user clicks reset or app exits — drag as many times as needed
 
 ### `GlobalHotkeyListener`
-- Uses JNativeHook to register a native keyboard hook
-- Listens for `Alt + Q` globally (works even when app is not focused)
-- Calls `PopupController.show()` / `hide()` on the JavaFX Application Thread via `Platform.runLater()`
-- Unregisters hook cleanly on app shutdown
+- Registers `Alt+Q` via JNativeHook (works system-wide, even when app is not focused)
+- Toggles popup show/hide
+- `onPopupHidden()` — called when `[×]` is clicked, syncs toggle state
+- Silences JNativeHook's verbose logging
+- `unregister()` called cleanly on app shutdown
 
 ### `QuickPDFApp`
 - JavaFX `Application` entry point
-- Sets `Platform.setImplicitExit(false)` so the app keeps running after popup closes
-- Initialises system tray icon (via `java.awt.SystemTray`) with a "Quit" option
-- Starts `GlobalHotkeyListener` on a daemon thread
-- Manages the single `PopupController` instance
+- `Platform.setImplicitExit(false)` — app stays alive when popup is closed
+- System tray: AWT-drawn PDF icon, right-click menu with Open + Quit
+- Wires `GlobalHotkeyListener` → `PopupController` → `DragDropHandler` → `ResultCardController`
 
 ---
 
-## 🔨 Build Order
+## 🚀 Running
 
-| Step | Class                        | Test Class                          |
-|------|------------------------------|--------------------------------------|
-| 1    | `TempFileManager`            | `TempFileManagerTest`               |
-| 2    | `ConversionService`          | `ConversionServiceTest`             |
-| 3    | `DragDropHandler`            | `DragDropHandlerTest`               |
-| 4    | `PopupController`            | *(manual / integration test)*       |
-| 5    | `ResultCardController`       | *(manual / integration test)*       |
-| 6    | `GlobalHotkeyListener`       | `GlobalHotkeyListenerTest`          |
-| 7    | `QuickPDFApp`                | *(manual / integration test)*       |
+### Development (IntelliJ)
+Hit the green **Run** button on `QuickPDFApp`.
 
----
+### From terminal
+```powershell
+# Build
+mvn clean package
 
-## 🚀 Running the App
-
-```bash
-mvn package
-java --module-path /path/to/javafx-sdk/lib --add-modules javafx.controls,javafx.graphics -jar target/quickpdf.jar
+# Run
+QuickPDF.bat
 ```
 
-Or via the JavaFX Maven plugin:
-```bash
-mvn javafx:run
+### Build distributable `.exe` (no Java required for end user)
+```powershell
+build-dist.bat
 ```
+Output: `dist\QuickPDF.zip` — send to friend, they unzip and double-click `QuickPDF.exe`.
 
 ---
 
-## 🗺️ MVP Scope
+## ✅ Features
 
-- [x] Project structure & documentation
-- [x] TempFileManager
-- [x] ConversionService (JPG → PDF)
-- [x] DragDropHandler
-- [x] PopupController (drop zone UI)
-- [x] ResultCardController (animated PDF card)
-- [x] GlobalHotkeyListener (Alt+Q)
-- [x] QuickPDFApp (system tray + wiring)
+- [x] Global hotkey `Alt+Q` — works from any app
+- [x] Always-on-top floating popup — centred on screen
+- [x] Drag `.jpg` / `.jpeg` / `.png` in from OS
+- [x] Multi-file drop — merges into one PDF (one page per image)
+- [x] Terminal-style conversion animation with progress bar
+- [x] PDF result card with macOS-style drawn icon
+- [x] Inline filename rename on hover
+- [x] Drag PDF out to any window (browser form, file explorer, email)
+- [x] PDF icon follows mouse cursor during drag
+- [x] File persists until explicitly reset or app exits
+- [x] System tray — app lives in background
+- [x] Temp file cleanup on reset + JVM shutdown hook
+- [x] Self-contained `.exe` via `jpackage` (no Java needed)
+
+## 🔜 Possible Next Steps
+
+- [ ] Compress PDF option (reduce DPI)
+- [ ] Save to folder instead of temp
+- [ ] Custom hotkey setting
+- [ ] PDF → JPG reverse conversion
+- [ ] Rewrite UI in Swing + FlatLaf (~100 MB RAM vs ~400 MB JavaFX)
+- [ ] Rewrite in Rust for native performance and smaller binary size
